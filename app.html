@@ -1,0 +1,127 @@
+<!-- templates/index.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouTube Downloader</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>YouTube Downloader (demo)</h1>
+    <input id="url" type="text" placeholder="Paste YouTube or playlist URL here">
+    <div class="row">
+      <button id="infoBtn">Get Info</button>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="isPlaylist"> playlist
+      </label>
+      <select id="playlistMode">
+        <option value="video">Playlist: Video (default)</option>
+        <option value="audio">Playlist: Audio (MP3)</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="downloadVideo">Download Best Video</button>
+      <button id="downloadAudio">Download MP3 (audio)</button>
+      <button id="downloadPlaylist">Download Playlist (zipped)</button>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="meta" class="meta"></div>
+    <div id="formats" class="formats"></div>
+  </div>
+
+<script>
+async function postJSON(url, data){
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  return res;
+}
+
+const infoBtn = document.getElementById('infoBtn');
+const urlEl = document.getElementById('url');
+const status = document.getElementById('status');
+const meta = document.getElementById('meta');
+const formatsDiv = document.getElementById('formats');
+const isPlaylistCheckbox = document.getElementById('isPlaylist');
+const playlistModeSelect = document.getElementById('playlistMode');
+
+infoBtn.onclick = async () => {
+  const url = urlEl.value.trim();
+  if (!url) return alert('Enter URL');
+  status.textContent = 'Fetching info...';
+  const res = await postJSON('/info', {url});
+  const data = await res.json();
+  if (!res.ok) { status.textContent = 'Error: ' + (data.error||res.statusText); return; }
+  status.textContent = '';
+
+  if (data.type === 'playlist'){
+    isPlaylistCheckbox.checked = true;
+    meta.innerHTML = `<h3>Playlist: ${data.title}</h3><p>by ${data.uploader} — ${data.total_videos} videos</p><img src="${data.thumbnail}" style="max-width:280px">`;
+    formatsDiv.innerHTML = '<h4>Playlist sample entries</h4>';
+    const ul = document.createElement('ul');
+    (data.entries_sample||[]).forEach(e => {
+      const li = document.createElement('li');
+      li.textContent = `${e.title} (${e.id})`;
+      ul.appendChild(li);
+    });
+    formatsDiv.appendChild(ul);
+  } else {
+    isPlaylistCheckbox.checked = false;
+    meta.innerHTML = `<h3>${data.title}</h3><p>by ${data.uploader}</p><img src="${data.thumbnail}" style="max-width:280px">`;
+    formatsDiv.innerHTML = '<h4>Formats</h4>';
+    const ul = document.createElement('ul');
+    (data.formats||[]).slice(-12).reverse().forEach(f => {
+      const li = document.createElement('li');
+      li.textContent = `${f.format_id} — ${f.ext} — ${f.vcodec||''}/${f.acodec||''} — ${f.height||''}p — ${f.filesize||''}`;
+      ul.appendChild(li);
+    });
+    formatsDiv.appendChild(ul);
+  }
+};
+
+async function triggerDownload(payload){
+  status.textContent = 'Requesting download... this may take some seconds/minutes for large playlists.';
+  const res = await postJSON('/download', payload);
+  if (!res.ok){
+    const err = await res.json();
+    status.textContent = 'Error: ' + (err.error || res.statusText);
+    return;
+  }
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  const urlBlob = URL.createObjectURL(blob);
+  a.href = urlBlob;
+  const disp = res.headers.get('content-disposition');
+  let filename = 'download';
+  if (disp && disp.includes('filename=')) filename = disp.split('filename=')[1].replace(/['"]/g,'');
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(urlBlob);
+  status.textContent = 'Download finished';
+}
+
+document.getElementById('downloadVideo').onclick = () => {
+  const url = urlEl.value.trim(); if(!url) return alert('Enter URL');
+  triggerDownload({url, mode: 'video'});
+};
+
+document.getElementById('downloadAudio').onclick = () => {
+  const url = urlEl.value.trim(); if(!url) return alert('Enter URL');
+  triggerDownload({url, mode: 'audio'});
+};
+
+document.getElementById('downloadPlaylist').onclick = () => {
+  const url = urlEl.value.trim(); if(!url) return alert('Enter playlist URL');
+  const submode = playlistModeSelect.value; // video or audio
+  triggerDownload({url, mode: 'playlist', submode});
+};
+</script>
+</body>
+</html>

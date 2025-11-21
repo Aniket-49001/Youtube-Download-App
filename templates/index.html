@@ -1,0 +1,153 @@
+<!-- templates/index.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouTube Downloader</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>YouTube Downloader</h1>
+    <input id="url" type="text" placeholder="Paste YouTube or playlist URL here">
+    <div class="row">
+      <button id="infoBtn">Get Info</button>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="isPlaylist"> playlist
+      </label>
+      <select id="playlistMode">
+        <option value="video">Playlist: Video (default)</option>
+        <option value="audio">Playlist: Audio (MP3)</option>
+      </select>
+    </div>
+    
+        <div class="row">
+          <button id="downloadVideo">Download Video</button>
+          <button id="downloadAudio">Download MP3 (audio)</button>
+          <button id="downloadPlaylist">Download Playlist (zipped)</button>
+        </div>
+    
+        <div id="status" class="status"></div>
+        <div id="meta" class="meta"></div>
+      </div>
+    
+    <script>
+    async function postJSON(url, data){
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(data)
+      });
+      return res;
+    }
+    
+    const infoBtn = document.getElementById('infoBtn');
+    const urlEl = document.getElementById('url');
+    const status = document.getElementById('status');
+    const meta = document.getElementById('meta');
+    const isPlaylistCheckbox = document.getElementById('isPlaylist');
+    const playlistModeSelect = document.getElementById('playlistMode');
+
+    urlEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            infoBtn.click();
+        }
+    });
+    
+    infoBtn.onclick = async () => {
+      const url = urlEl.value.trim();
+      if (!url) return alert('Enter URL');
+      
+      // Clear old data
+      meta.innerHTML = '';
+      status.textContent = 'Fetching info...';
+      status.className = 'status info';
+      
+      try {
+        const res = await postJSON('/info', {url});
+        const data = await res.json();
+        console.log('Received data:', data);
+    
+        if (!res.ok) {
+          status.textContent = 'Error: ' + (data.error || res.statusText);
+          status.className = 'status error';
+          console.error('Server returned an error:', data.error || res.statusText);
+          return;
+        }
+        status.textContent = '';
+        status.className = 'status';
+    
+        if (data.type === 'playlist') {
+          isPlaylistCheckbox.checked = true;
+          meta.innerHTML = `<h3>Playlist: ${data.title}</h3><p>by ${data.uploader} — ${data.total_videos} videos</p><img src="${data.thumbnail}" style="max-width:280px">`;
+        } else {
+          isPlaylistCheckbox.checked = false;
+          meta.innerHTML = `<h3>${data.title}</h3><p>by ${data.uploader}</p><img src="${data.thumbnail}" style="max-width:280px">`;
+        }
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'status error';
+        console.error('An error occurred:', e);
+      }
+    };
+    
+    async function triggerDownload(payload){
+      status.textContent = 'Requesting download...';
+      status.className = 'status info';
+      const res = await postJSON('/download', payload);
+      if (!res.ok){
+        const err = await res.json();
+        status.textContent = 'Error: ' + (err.error || res.statusText);
+        status.className = 'status error';
+        return;
+      }
+      
+      const { task_id } = await res.json();
+      status.textContent = 'Download started...';
+      status.className = 'status info';
+    
+      const pollInterval = setInterval(async () => {
+        const statusRes = await fetch(`/status/${task_id}`);
+        const statusData = await statusRes.json();
+    
+        if (statusData.status === 'completed') {
+          clearInterval(pollInterval);
+          status.textContent = 'Download finished. Preparing file...';
+          status.className = 'status success';
+          window.location.href = `/file/${task_id}`;
+          setTimeout(() => {
+            status.textContent = '';
+            status.className = 'status';
+          }, 5000);
+        } else if (statusData.status === 'failed') {
+          clearInterval(pollInterval);
+          status.textContent = `Error: ${statusData.error}`;
+          status.className = 'status error';
+        } else {
+          status.textContent = `Status: ${statusData.status}`;
+          status.className = 'status info';
+        }
+      }, 3000);
+    }
+    
+    document.getElementById('downloadVideo').onclick = () => {
+      const url = urlEl.value.trim(); if(!url) return alert('Enter URL');
+      triggerDownload({url, mode: 'video'});
+    };
+    
+    document.getElementById('downloadAudio').onclick = () => {
+      const url = urlEl.value.trim(); if(!url) return alert('Enter URL');
+      triggerDownload({url, mode: 'audio'});
+    };
+    
+    document.getElementById('downloadPlaylist').onclick = () => {
+      const url = urlEl.value.trim(); if(!url) return alert('Enter URL');
+      const submode = playlistModeSelect.value;
+      triggerDownload({url, mode: 'playlist', submode});
+    };
+    </script>
+    </body>
+    </html>
+    
