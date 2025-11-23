@@ -20,8 +20,8 @@ echo "Installing dependencies from requirements.txt..."
 pip install -r requirements.txt
 
 REM Start the server
-echo "Starting the server..."
-echo "Your application will be available at http://localhost:5000"
-python app.py
+echo "Starting the production server with Waitress..."
+echo "Your application will be available at http://localhost:5000 or http://<your-ip-address>:5000"
+waitress-serve --host 0.0.0.0 --port 5000 app:app
 
 pause

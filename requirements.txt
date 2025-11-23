@@ -1,3 +1,4 @@
 # requirements.txt
 Flask>=2.0
 yt-dlp>=2023.12.1
+waitress
